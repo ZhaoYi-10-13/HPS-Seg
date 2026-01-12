@@ -1,0 +1,6 @@
+# Enhanced CATSeg with HPA only (for ablation study)
+_BASE_: vitb_384_enhanced.yaml
+MODEL:
+  HYPERSPHERICAL:
+    USE_HPA: True           # Enable Hyperspherical Prototype Alignment
+    USE_AFR: False          # Disable Adaptive Feature Rectification
