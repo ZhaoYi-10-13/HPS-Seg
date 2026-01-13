@@ -65,6 +65,7 @@ TEST:
   SLIDING_WINDOW: False
 DATALOADER:
   FILTER_EMPTY_ANNOTATIONS: True
-  NUM_WORKERS: 32
+  # Reduce workers to avoid hitting thread limits in constrained environments.
+  NUM_WORKERS: 8
 VERSION: 2
 CUDNN_BENCHMARK: True

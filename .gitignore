@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.log
+
+# Output
+output/
+*.pth
+*.pkl
+
+# Datasets (通常不提交到仓库)
+datasets/ADEChallengeData2016/
+datasets/ade20k_full/
+datasets/coco-stuff/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# SSH keys (安全考虑)
+*_github_key
+*_github_key.pub
+
+# Temporary files
+*.tmp
+*.bak
