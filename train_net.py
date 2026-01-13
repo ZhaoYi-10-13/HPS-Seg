@@ -8,16 +8,39 @@ import copy
 import itertools
 import logging
 import os
+import distutils
+import numpy as np
+import weakref
 from collections import OrderedDict
 from typing import Any, Dict, List, Set
 
 import torch
+try:
+    import distutils.version as _distutils_version  # type: ignore
+    distutils.version = _distutils_version  # type: ignore[attr-defined]
+except Exception:
+    pass
+# numpy>=2.0 dropped np.int; restore alias for third-party code compatibility.
+if not hasattr(np, "int"):
+    np.int = int  # type: ignore[attr-defined]
+# numpy>=2.0 also dropped np.float; restore for detectron2 evaluators.
+if not hasattr(np, "float"):
+    np.float = float  # type: ignore[attr-defined]
 
 import detectron2.utils.comm as comm
 from detectron2.checkpoint import DetectionCheckpointer
 from detectron2.config import get_cfg
 from detectron2.data import MetadataCatalog, build_detection_train_loader
-from detectron2.engine import DefaultTrainer, default_argument_parser, default_setup, launch
+from detectron2.engine import (
+    DefaultTrainer,
+    SimpleTrainer,
+    AMPTrainer,
+    TrainerBase,
+    default_argument_parser,
+    default_setup,
+    launch,
+)
+from detectron2.engine.defaults import create_ddp_model
 from detectron2.evaluation import CityscapesInstanceEvaluator, CityscapesSemSegEvaluator, \
     COCOEvaluator, COCOPanopticEvaluator, DatasetEvaluators, SemSegEvaluator, verify_results, \
     DatasetEvaluator
@@ -84,6 +107,41 @@ class Trainer(DefaultTrainer):
     """
     Extension of the Trainer class adapted to DETR.
     """
+
+    def __init__(self, cfg):
+        """
+        Override to enable find_unused_parameters in DDP to avoid reduction errors.
+        """
+        TrainerBase.__init__(self)  # bypass DefaultTrainer.__init__
+        logger = logging.getLogger("detectron2")
+        if not logger.isEnabledFor(logging.INFO):
+            setup_logger()
+        cfg = DefaultTrainer.auto_scale_workers(cfg, comm.get_world_size())
+
+        model = self.build_model(cfg)
+        optimizer = self.build_optimizer(cfg, model)
+        data_loader = self.build_train_loader(cfg)
+
+        model = create_ddp_model(
+            model,
+            broadcast_buffers=False,
+            find_unused_parameters=True,
+        )
+        self._trainer = (AMPTrainer if cfg.SOLVER.AMP.ENABLED else SimpleTrainer)(
+            model, data_loader, optimizer
+        )
+
+        self.scheduler = self.build_lr_scheduler(cfg, optimizer)
+        self.checkpointer = DetectionCheckpointer(
+            model,
+            cfg.OUTPUT_DIR,
+            trainer=weakref.proxy(self),
+        )
+        self.start_iter = 0
+        self.max_iter = cfg.SOLVER.MAX_ITER
+        self.cfg = cfg
+
+        self.register_hooks(self.build_hooks())
 
     @classmethod
     def build_evaluator(cls, cfg, dataset_name, output_folder=None):
@@ -293,7 +351,10 @@ def setup(args):
 
 def main(args):
     cfg = setup(args)
-    torch.set_float32_matmul_precision("high")
+    # torch.set_float32_matmul_precision is only available in newer torch;
+    # guard to keep compatibility with torch==1.10 used here.
+    if hasattr(torch, "set_float32_matmul_precision"):
+        torch.set_float32_matmul_precision("high")
     if args.eval_only:
         model = Trainer.build_model(cfg)
         DetectionCheckpointer(model, save_dir=cfg.OUTPUT_DIR).resume_or_load(

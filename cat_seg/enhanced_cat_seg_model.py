@@ -139,7 +139,8 @@ class EnhancedCATSeg(nn.Module):
         # AFR: Adaptive Feature Rectification
         if use_afr:
             self.afr = AdaptiveFeatureRectifier(
-                feature_dim=self.proj_dim,
+                # AFR operates on the encoded image tokens (res3), which use CLIP's embedding dim
+                feature_dim=self.embed_dim,
                 num_classes=num_classes,
                 reduction=afr_reduction,
             )
@@ -355,10 +356,11 @@ class EnhancedCATSeg(nn.Module):
         unfold = nn.Unfold(kernel_size=kernel, stride=stride)
         fold = nn.Fold(out_res, kernel_size=kernel, stride=stride)
 
-        image = F.interpolate(
-            images[0].unsqueeze(0), size=out_res, mode='bilinear', align_corners=False
-        ).squeeze()
-        image = rearrange(unfold(image), "(C H W) L-> L C H W", C=3, H=kernel)
+        # 保持4D输入给unfold，然后通过unsqueeze(0)添加batch维度给rearrange
+        image = F.interpolate(images[0].unsqueeze(0), size=out_res, mode='bilinear', align_corners=False)
+        image_unfolded = unfold(image)  # [B, C*kernel*kernel, L] 其中B=1
+        # rearrange需要去掉B维度，将[1, C*H*W, L]变成[L, C, H, W]
+        image = rearrange(image_unfolded.squeeze(0), "(C H W) L-> L C H W", C=3, H=kernel)
         global_image = F.interpolate(
             images[0].unsqueeze(0), size=(kernel, kernel), mode='bilinear', align_corners=False
         )
@@ -391,7 +393,11 @@ class EnhancedCATSeg(nn.Module):
             global_output, size=out_res, mode='bilinear', align_corners=False
         )
         outputs = outputs[:-1]
-        outputs = fold(outputs.flatten(1).T) / fold(unfold(torch.ones([1] + out_res, device=self.device)))
+        # fold需要3D输入[B, C*kernel*kernel, L]，outputs.flatten(1)是[L, C*kernel*kernel]，需要转置并添加batch维度
+        outputs_flat = outputs.flatten(1)  # [L, C*kernel*kernel]
+        outputs_flat = outputs_flat.T.unsqueeze(0)  # [1, C*kernel*kernel, L]
+        # 修复：torch.ones需要4D输入[B, C, H, W]，不能是3D
+        outputs = fold(outputs_flat) / fold(unfold(torch.ones([1, 1] + out_res, device=self.device)))
         outputs = (outputs + global_output) / 2.
 
         height = batched_inputs[0].get("height", out_res[0])

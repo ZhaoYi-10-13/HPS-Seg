@@ -63,6 +63,47 @@ datasets/
     └── annotations_detectron2/
 ```
 
+#### ADE20K Dataset Download
+
+##### ADE20K-150 (Standard Benchmark Version)
+
+To download the ADE20K dataset with 150 classes (standard benchmark version), download directly from the official source:
+
+```bash
+wget http://data.csail.mit.edu/places/ADEchallenge/ADEChallengeData2016.zip
+unzip ADEChallengeData2016.zip
+mv ADEChallengeData2016 ./datasets/
+```
+
+##### ADE20K-847 (Full Version)
+
+To download the complete ADE20K dataset with 847 classes (full version), follow these steps:
+
+1. **Install openxlab**:
+   ```bash
+   pip install openxlab
+   pip install -U openxlab
+   ```
+
+2. **Login to openxlab** (replace with your actual Access Key and Secret Key):
+   ```python
+   import openxlab
+   openxlab.login(ak='your_access_key', sk='your_secret_key')
+   ```
+
+3. **Download the dataset**:
+   ```python
+   from openxlab.dataset import get
+   get(dataset_repo='OpenDataLab/ADE20K_2016', target_path='./datasets/ade20k_full/')
+   ```
+
+4. **Unzip the dataset**:
+   ```bash
+   unzip ./datasets/ade20k_full/ADEChallengeData2016.zip -d ./datasets/ade20k_full/
+   ```
+
+The downloaded dataset will be located at `./datasets/ade20k_full/ADEChallengeData2016/` and contains the full ADE20K dataset with 847 semantic categories.
+
 ## Quick Start
 
 ### Training
